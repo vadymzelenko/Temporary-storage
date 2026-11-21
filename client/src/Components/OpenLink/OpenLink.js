@@ -3,6 +3,8 @@ import React, { useEffect, useState } from "react";
 import '../cart.css'
 import Loader from "../Loading/Loading";
 
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+
 const OpenLink = () => {
     const { id } = useParams();
     const [status, setStatus] = useState("checking");
@@ -12,7 +14,7 @@ const OpenLink = () => {
     const [remainingTime, setRemainingTime] = useState(0);
 
     useEffect(() => {
-        fetch(`https://temporary-storage.onrender.com/api/files/check/${id}`)
+        fetch(`${API_URL}/api/files/check/${id}`)
             .then((res) => res.json())
             .then((data) => {
                 if (data.valid) {
@@ -104,7 +106,7 @@ const OpenLink = () => {
                 }
                 </p>
                 <a
-                    href={`https://temporary-storage.onrender.com/api/files/${id}/zip`}
+                    href={`${API_URL}/api/files/${id}/zip`}
                     className="btn"
                     style={{ marginTop: '1rem', display: 'inline-block' }}
                 >
@@ -119,7 +121,7 @@ const OpenLink = () => {
                                 <li key={index}>
                                     <span className="file-name">📄 {name}</span>
                                     <a
-                                        href={`https://temporary-storage.onrender.com/api/files/${id}?index=${index}`}
+                                        href={`${API_URL}/api/files/${id}?index=${index}`}
                                         className="btn"
                                     >
                                         Download

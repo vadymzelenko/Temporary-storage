@@ -2,8 +2,35 @@ import File from "../model/fileModels.js";
 import { uploadToSupabase, getSupabaseUrl } from "../services/supabase.service.js";
 import archiver from "archiver";
 import axios from "axios";
-import stream from "stream";
-import { promisify } from "util";
+import mongoose from "mongoose";
+
+const DEFAULT_TTL = Number(process.env.TTL_IN_SECONDS) || 3600;
+const MAX_TTL = Number(process.env.MAX_TTL_IN_SECONDS) || 24 * 3600;
+const PUBLIC_URL = (process.env.PUBLIC_URL || "http://localhost:3000").replace(/\/$/, "");
+
+// Content-Disposition with a safe ASCII fallback and the original UTF-8 name (RFC 6266 / 5987).
+const contentDisposition = (name) => {
+    const ascii = name.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
+    return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+};
+
+// Loads an upload by id; returns null and sends the response if it is missing, invalid or expired.
+const findActive = async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+        res.status(404).json({ valid: false, message: "File not found" });
+        return null;
+    }
+    const file = await File.findById(req.params.id);
+    if (!file) {
+        res.status(404).json({ valid: false, message: "File not found" });
+        return null;
+    }
+    if (file.expiresAt < Date.now()) {
+        res.status(410).json({ valid: false, message: "Link expired" });
+        return null;
+    }
+    return file;
+};
 
 export const uploadFile = async (req, res) => {
     try {
@@ -12,7 +39,8 @@ export const uploadFile = async (req, res) => {
             return res.status(400).json({ error: "No files uploaded" });
         }
 
-        const ttl = parseInt(req.body.ttl) || process.env.TTL_IN_SECONDS;
+        const requested = parseInt(req.body.ttl, 10);
+        const ttl = Math.min(requested > 0 ? requested : DEFAULT_TTL, MAX_TTL);
         const expiresAt = new Date(Date.now() + ttl * 1000);
         const originalNames = [];
         const supabasePaths = [];
@@ -25,7 +53,7 @@ export const uploadFile = async (req, res) => {
 
         const newFile = await File.create({ originalNames, supabasePaths, expiresAt });
 
-        res.json({ link: `https://drive.vzbb.site/open/${newFile._id}` });
+        res.json({ link: `${PUBLIC_URL}/open/${newFile._id}`, expiresAt });
     } catch (err) {
         console.error("Upload error:", err.message);
         res.status(500).json({ error: err.message });
@@ -34,11 +62,10 @@ export const uploadFile = async (req, res) => {
 
 export const getFile = async (req, res) => {
     try {
-        const file = await File.findById(req.params.id);
-        const index = parseInt(req.query.index);
-
-        if (!file || !file.supabasePaths[index]) return res.status(404).send("File not found");
-        if (file.expiresAt < Date.now()) return res.status(410).send("Link expired");
+        const file = await findActive(req, res);
+        if (!file) return;
+        const index = parseInt(req.query.index, 10);
+        if (!file.supabasePaths[index]) return res.status(404).json({ message: "File not found" });
 
         const ttl = Math.floor((file.expiresAt - Date.now()) / 1000);
         const url = await getSupabaseUrl(file.supabasePaths[index], ttl);
@@ -50,29 +77,28 @@ export const getFile = async (req, res) => {
         });
 
         const filename = file.originalNames[index];
-        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        res.setHeader("Content-Disposition", contentDisposition(filename));
         res.setHeader("Content-Type", response.headers["content-type"]);
 
-        // Проксіруємо файл напряму
+        // Stream the file through the server so the storage URL is never exposed
         response.data.pipe(res);
     } catch (err) {
         console.error("File download error:", err.message);
-        res.status(500).json({ error: "Download failed" });
+        if (!res.headersSent) res.status(500).json({ error: "Download failed" });
+        else res.end();
     }
 };
 
 export const checkFile = async (req, res) => {
     try {
-        const file = await File.findById(req.params.id);
-        if (!file) return res.status(404).json({ valid: false, message: "File not found" });
-        if (file.expiresAt < Date.now()) return res.status(410).json({ valid: false, message: "Link expired" });
+        const file = await findActive(req, res);
+        if (!file) return;
 
         res.status(200).json({
             valid: true,
             message: "File exists",
             file: {
                 originalNames: file.originalNames,
-                supabasePaths: file.supabasePaths,
                 expiresAt: file.expiresAt,
             }
         });
@@ -83,9 +109,8 @@ export const checkFile = async (req, res) => {
 
 export const downloadAllAsZip = async (req, res) => {
     try {
-        const file = await File.findById(req.params.id);
-        if (!file) return res.status(404).send("File not found");
-        if (file.expiresAt < Date.now()) return res.status(410).send("Link expired");
+        const file = await findActive(req, res);
+        if (!file) return;
 
         const zip = archiver("zip", { zlib: { level: 9 } });
         res.setHeader("Content-Type", "application/zip");
@@ -106,6 +131,7 @@ export const downloadAllAsZip = async (req, res) => {
         await zip.finalize();
     } catch (err) {
         console.error("ZIP error:", err.message);
-        res.status(500).send("Server error");
+        if (!res.headersSent) res.status(500).send("Server error");
+        else res.end();
     }
 };

@@ -10,8 +10,8 @@ function Header() {
             <label htmlFor="menu-toggle" className="burger">&#9776;</label>
             <nav className="nav">
                 <a href="https://temporary-storage-f.onrender.com/">Main</a>
-                <a href="https://github.com/01cheese/Temporary-storage">About Project</a>
-                <a href="https://github.com/01cheese/Temporary-storage">GitHub</a>
+                <a href="https://github.com/vadymzelenko/Temporary-storage">About Project</a>
+                <a href="https://github.com/vadymzelenko/Temporary-storage">GitHub</a>
             </nav>
         </header>
     );

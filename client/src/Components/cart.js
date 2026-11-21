@@ -3,6 +3,8 @@ import { Dropzone, FileMosaic } from "@files-ui/react";
 import "./cart.css";
 import Loader from "./Loading/Loading";
 
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+
 const FlipCard = () => {
     const [files, setFiles] = useState([]);
     const [link, setLink] = useState('');
@@ -43,7 +45,7 @@ const FlipCard = () => {
         formData.append("ttl", TTL);
 
         try {
-            const res = await fetch("https://temporary-storage.onrender.com/api/files/upload", {
+            const res = await fetch(`${API_URL}/api/files/upload`, {
                 method: "POST",
                 body: formData,
             });
